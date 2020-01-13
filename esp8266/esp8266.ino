@@ -97,9 +97,9 @@ void loop() {
 
   if (WiFi.status() == WL_CONNECTED) {
 
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < 4; i++) {
       getTime();
-      delay(1000);
+      checkWaitHandleTask(1000);
     }
 
     if (getJson()) {
@@ -112,11 +112,11 @@ void loop() {
     errorCode(0x1);
   }
 
-  delay(3000);
+  checkWaitHandleTask(1000);
 
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < 1; i++) {
     getDHT11();
-    delay(1500);
+    checkWaitHandleTask(1000);
   }
 
   if (Serial.available()) //if number of bytes (characters) available for reading from serial port
@@ -161,8 +161,10 @@ bool getDHT11() {
   byte temperature = 0;
   byte humidity = 0;
   int err = SimpleDHTErrSuccess;
+
   if ((err = dht11.read(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
     Serial.print("Read DHT11 failed, err="); Serial.println(err);
+    displayDHT11(temperature, humidity);
     return false;
   }
 
@@ -192,6 +194,19 @@ bool getTime() {
   sendTubeCommand(1, seconds % 10);
 
   return true;
+}
+
+
+//空闲时间检测是否有消息任务
+bool checkWaitHandleTask(int timeout) {
+  Serial.print("delay...");
+  Serial.print(timeout);
+  timeout = timeout + millis();
+  while (millis() < timeout) {
+    delay(2);
+  }
+  Serial.println("\ndelay done");
+  return false;
 }
 
 bool getJson()
@@ -280,14 +295,14 @@ void displayNumber(int number) //display number in the middle
 void displayDHT11(int temperature, int humidity)
 {
   sendTubeCommand(8, 0xf);
-  sendTubeCommand(7, temperature < 0 ? 0xa : 0xf);
-  sendTubeCommand(6, temperature / 10);
-  sendTubeCommand(5, temperature % 10);
+  sendTubeCommand(7, 0xf);
+  sendTubeCommand(6, humidity / 10);
+  sendTubeCommand(5, humidity % 10);
 
   sendTubeCommand(4, 0xf);
   sendTubeCommand(3, 0xf);
-  sendTubeCommand(2, humidity / 10);
-  sendTubeCommand(1, humidity % 10);
+  sendTubeCommand(2, temperature / 10);
+  sendTubeCommand(1, temperature % 10);
 
 }
 
