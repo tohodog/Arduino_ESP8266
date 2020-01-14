@@ -98,7 +98,7 @@ void loop() {
 
     for (int i = 0; i < 4; i++) {
       getTime();
-      checkWaitHandleTask(1000);
+      delayAndHandleTask(1000);
     }
 
     if (getJson()) {
@@ -111,11 +111,11 @@ void loop() {
     errorCode(0x1);
   }
 
-  checkWaitHandleTask(1000);
+  delayAndHandleTask(1000);
 
   for (int i = 0; i < 1; i++) {
     getDHT11();
-    checkWaitHandleTask(1000);
+    delayAndHandleTask(1000);
   }
 
 }
@@ -168,7 +168,7 @@ bool getDHT11() {
 bool getTime() {
 
   timeClient.update();
-  Serial.println(timeClient.getFormattedTime());
+  Serial.println("NTPTime:" + timeClient.getFormattedTime());
 
   int hours = timeClient. getHours();
   int minutes = timeClient. getMinutes();
@@ -186,17 +186,18 @@ bool getTime() {
   return true;
 }
 
-
 //空闲时间检测是否有消息任务
-bool checkWaitHandleTask(int timeout) {
-  Serial.println("delay..." + timeout );
+bool delayAndHandleTask(int timeout) {
+  Serial.print("delayAndHandleTask...");
+  Serial.print(timeout);
+  Serial.println("");
   timeout = timeout + millis();
   while (millis() < timeout) {
     checkSerialIO();
-    //    checkTCPIO();
+    checkTCPIO();
     delay(2);
   }
-  Serial.println("\ndelay done");
+  Serial.println("delayAndHandleTask done");
   return false;
 }
 
@@ -212,9 +213,11 @@ void checkSerialIO() {
   }
 }
 
-
+//-------------------------TCP START------------------------------
 WiFiClient client;
-String host = "192.168.0.68";
+//设备唯一标识,后台提前入库
+const char* DEVICE_ID = "S5FE62HHYDBI";
+String host = "192.168.168.119";
 const uint16_t port = 9000;
 //检测TCP连接消息
 bool checkTCPIO() {
@@ -222,6 +225,8 @@ bool checkTCPIO() {
   if (!client.connected()) {
     if (!client.connect(host, port)) {//5s timeout
       Serial.println("TCP connection failed->" + host + ":" + port);
+      String id = DEVICE_ID;
+      sendTCP("{\"id\":\"" + id + "\"}");
       return false;
     } else {
       Serial.println("TCP connection OK->" + host + ":" + port);
@@ -237,9 +242,9 @@ void listenTCP() {
   //有消息
   if (client.available() > 0) {
     //默认超时1秒
-    String line = client.readStringUntil('}');
+    String line = client.readStringUntil('\n');
     Serial.println("TCP read->" + line);
-
+    client.print(line);
   }
 }
 //发送TCP消息
@@ -252,13 +257,15 @@ bool sendTCP(String msg) {
     return false;
   }
 }
+//-------------------------TCP END------------------------------
 
 bool getJson()
 {
-  Serial.println("Request...");
+  String api = "http://api.bilibili.com/x/relation/stat?vmid=" + biliuid;
+  Serial.println("Request:" + api);
   bool r = false;
   http.setTimeout(HTTP_TIMEOUT);
-  http.begin("http://api.bilibili.com/x/relation/stat?vmid=" + biliuid);
+  http.begin(api);
   int httpCode = http.GET();
 
   if (httpCode == HTTP_CODE_OK) {
