@@ -21,7 +21,6 @@ String biliuid = "423895";         //bilibili UID
 
 
 const unsigned long HTTP_TIMEOUT = 5000;
-WiFiClient client;
 HTTPClient http;
 String response;
 int follower = 0;
@@ -119,15 +118,6 @@ void loop() {
     checkWaitHandleTask(1000);
   }
 
-  if (Serial.available()) //if number of bytes (characters) available for reading from serial port
-  {
-    char c = Serial.read();
-    Serial.print("I received:"); //print I received
-    Serial.println(c); //send what you read
-    if (c == 't')testDisplay();
-    if (c == 's')smartConfig(30);
-  }
-
 }
 
 void connWifi() {
@@ -199,14 +189,68 @@ bool getTime() {
 
 //空闲时间检测是否有消息任务
 bool checkWaitHandleTask(int timeout) {
-  Serial.print("delay...");
-  Serial.print(timeout);
+  Serial.println("delay..." + timeout );
   timeout = timeout + millis();
   while (millis() < timeout) {
+    checkSerialIO();
+    //    checkTCPIO();
     delay(2);
   }
   Serial.println("\ndelay done");
   return false;
+}
+
+//检测串口消息
+void checkSerialIO() {
+  if (Serial.available()) //if number of bytes (characters) available for reading from serial port
+  {
+    char c = Serial.read();
+    Serial.print("I received:"); //print I received
+    Serial.println(c); //send what you read
+    if (c == 't')testDisplay();
+    if (c == 's')smartConfig(30);
+  }
+}
+
+
+WiFiClient client;
+String host = "192.168.0.68";
+const uint16_t port = 9000;
+//检测TCP连接消息
+bool checkTCPIO() {
+  //检测建立连接
+  if (!client.connected()) {
+    if (!client.connect(host, port)) {//5s timeout
+      Serial.println("TCP connection failed->" + host + ":" + port);
+      return false;
+    } else {
+      Serial.println("TCP connection OK->" + host + ":" + port);
+    }
+  } else {
+    //tcp连接建立
+    listenTCP();
+  }
+  return true;
+}
+//监听TCP消息
+void listenTCP() {
+  //有消息
+  if (client.available() > 0) {
+    //默认超时1秒
+    String line = client.readStringUntil('}');
+    Serial.println("TCP read->" + line);
+
+  }
+}
+//发送TCP消息
+bool sendTCP(String msg) {
+  Serial.println("sending data to server->" + msg);
+  if (client.connected()) {
+    client.println(msg);
+    return true;
+  } else {
+    return false;
+  }
 }
 
 bool getJson()
@@ -289,7 +333,6 @@ void displayNumber(int number) //display number in the middle
       tmp /= 10;
     }
   }
-
 }
 
 void displayDHT11(int temperature, int humidity)
@@ -303,7 +346,6 @@ void displayDHT11(int temperature, int humidity)
   sendTubeCommand(3, 0xf);
   sendTubeCommand(2, temperature / 10);
   sendTubeCommand(1, temperature % 10);
-
 }
 
 void initDisplay(int pro)
@@ -337,7 +379,6 @@ void testDisplay()
       if (Serial.read() == 't') return;
     }
   }
-
 }
 
 void errorCode(byte errorcode)
