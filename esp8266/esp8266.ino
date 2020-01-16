@@ -30,7 +30,7 @@ const int scanLimit = 7;
 const int pinDHT11 = D4;
 SimpleDHT11 dht11(pinDHT11);
 // read without samples.
-byte temperature = 0;
+byte temperature = 99;
 byte humidity = 0;
 
 //-------------------------网络时间------------------------------
@@ -39,8 +39,8 @@ byte humidity = 0;
 #include <WiFiUdp.h>
 
 const char* ntpServer = "ntp1.aliyun.com";
-const long  gmtOffset_sec = 8 * 3600; //这里采用UTC计时，中国为东八区，就是 8*60*60
-const int   daylightOffset_sec = 8 * 3600; //同上
+const int gmtOffset_sec = 8 * 3600; //这里采用UTC计时，中国为东八区，就是 8*60*60
+const int daylightOffset_sec = 8 * 3600; //同上
 
 WiFiUDP ntpUDP;
 // You can specify the time server pool and the offset (in seconds, can be
@@ -85,7 +85,6 @@ void setup()
   connWifi();
 }
 
-
 void loop() {
 
   //  displayNumber(follower -= 99);
@@ -100,6 +99,7 @@ void loop() {
     delayAndHandleTask(1000);
     runBili();
     delayAndHandleTask(1000);
+
   } else {
     Serial.println("[WiFi] Waiting to reconnect...");
     //    errorCode(0x1);
@@ -134,8 +134,6 @@ void connWifi() {
 
 bool getDHT11() {
   // start working...
-  Serial.println("Sample DHT11...");
-
   int err = SimpleDHTErrSuccess;
   if ((err = dht11.read(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
     Serial.print("Read DHT11 failed, err="); Serial.println(err);
@@ -145,7 +143,6 @@ bool getDHT11() {
 
   Serial.printf("DHT11 Read OK: %d *C, %d H\n", (int) temperature, (int) humidity);
   displayDHT11(temperature, humidity);
-  uploadData();
   return true;
 }
 
@@ -174,18 +171,27 @@ bool getTime() {
 void switchPin(int pinSwitch, byte low) {
   digitalWrite(pinSwitch, low ? LOW : HIGH);
 }
-//空闲时间检测是否有消息任务
+
+int updataMillis = -99999999; //上次上报数据时间
+//空闲时间检测是否有消息和任务
 bool delayAndHandleTask(int timeout) {
-  Serial.print("delayAndHandleTask...");
-  Serial.print(timeout);
-  Serial.println("");
+  //  Serial.print("delayAndHandleTask..." + timeout);
+  //  Serial.println("");
   timeout = timeout + millis();
   while (millis() < timeout) {
     checkSerialIO();
     checkTCPIO();
-    delay(2);
+
+    //一分钟自动上报设备信息
+    if (millis() - updataMillis > 60000) {
+      if (uploadData()) {
+        updataMillis = millis();
+      }
+    }
+
+    delay(5);
   }
-  Serial.println("delayAndHandleTask done");
+  //  Serial.println("delayAndHandleTask done");
   return false;
 }
 
@@ -206,6 +212,7 @@ WiFiClient client;
 const char* DEVICE_ID = "S5FE62HHYDBI";
 String host = "api.reol.top";
 const uint16_t port = 8899;
+int MSG_ID = 0;
 //检测TCP连接消息
 bool checkTCPIO() {
   //检测建立连接
@@ -214,10 +221,10 @@ bool checkTCPIO() {
       Serial.println("TCP Connection Failed->" + host + ":" + port);
       return false;
     } else {
+      Serial.println("TCP Connection OK->" + host + ":" + port);
       //建立连接发送设备id,授权
       String id = DEVICE_ID;
-      sendTCP("{\"type\":0,\"id\":\"" + id + "\"}");
-      Serial.println("TCP Connection OK->" + host + ":" + port);
+      uploadDeviceId();
     }
   } else {
     //tcp连接建立
@@ -236,26 +243,50 @@ void listenTCP() {
     const size_t capacity = JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + 70;
     DynamicJsonDocument doc(capacity);
     deserializeJson(doc, json);
-    int type = doc["type"];
-    if (type == -1) {//控制开关
+    int command = doc["command"];
+    int msg_id = doc["msg_id"];
+
+    if (command == 0) {//上报设备id/心跳包
+      uploadDeviceId(msg_id);
+    } else if (command == 1) { //立即上报信息
+      uploadData(msg_id);
+    } else if (command == 2) { //控制开关
       isSwitchOpen = doc["data"];
       switchPin(pinSwitch, isSwitchOpen);
+      uploadData(msg_id);
     }
-    uploadData();
+
   }
 }
-//上报设备所有信息,后期复杂可根据命令上报对应消息
-void uploadData() {
+//上报设备所有信息,后期复杂可根据命令上报对应消息,
+bool uploadData() {
+  return uploadData(MSG_ID++);
+}
+//消息id是确定回复对应的请求
+bool uploadData(int msg_id) {
   StaticJsonDocument<200> doc;
+  doc["msg_id"] = msg_id;
   doc["type"] = 1;
   doc["switch"] = isSwitchOpen;
   doc["temp"] = temperature;
   doc["humi"] = humidity;
   String output;
   serializeJson(doc, output);
-  sendTCP(output);
+  return sendTCP(output);
 }
-
+//上报设备id/心跳包回复
+bool uploadDeviceId() {
+  return uploadDeviceId(MSG_ID++);
+}
+bool uploadDeviceId(int msg_id) {
+  StaticJsonDocument<200> doc;
+  doc["msg_id"] = msg_id;
+  doc["type"] = 0;
+  doc["device_id"] = DEVICE_ID;
+  String output;
+  serializeJson(doc, output);
+  return sendTCP(output);
+}
 //发送TCP消息
 bool sendTCP(String msg) {
   if (client.connected()) {
@@ -300,13 +331,14 @@ void displayDHT11(int temperature, int humidity)
 {
   sendTubeCommand(8, 0xf);
   sendTubeCommand(7, 0xf);
-  sendTubeCommand(6, humidity / 10);
-  sendTubeCommand(5, humidity % 10);
+  sendTubeCommand(6, 0xf);
 
-  sendTubeCommand(4, 0xf);
-  sendTubeCommand(3, 0xf);
-  sendTubeCommand(2, temperature / 10);
-  sendTubeCommand(1, temperature % 10);
+  sendTubeCommand(5, temperature / 10);
+  sendTubeCommand(4, temperature % 10);
+
+  sendTubeCommand(3, 0xa);
+  sendTubeCommand(2, humidity / 10);
+  sendTubeCommand(1, humidity % 10);
 }
 
 void initDisplay(int pro)
