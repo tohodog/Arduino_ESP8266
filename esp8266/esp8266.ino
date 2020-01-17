@@ -103,7 +103,7 @@ void loop() {
     getDHT11(true);
     delayAndHandleTask(1500);
     runStock();
-    getDHT11(true);
+    getDHT11(false);
     delayAndHandleTask(1500);
 
   } else {
@@ -116,8 +116,8 @@ void loop() {
 }
 
 void connWifi() {
-  Serial.println("ssid:" + ssid + " password:" + password);
-  Serial.print("Connecting WiFi...");
+  Serial.println("[WiFi] SSID:" + ssid + " Password:" + password);
+  Serial.print("[WiFi] Connecting...");
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -133,7 +133,7 @@ void connWifi() {
       WiFi.begin(ssid, password);
     }
   }
-  Serial.print("\nWIFI connected, IP address: ");
+  Serial.print("\n[WIFI] connected, IP address: ");
   Serial.println(WiFi.localIP());
 }
 
@@ -141,13 +141,15 @@ void connWifi() {
 bool getDHT11(bool isShow) {
   // start working...
   int err = SimpleDHTErrSuccess;
-  if ((err = dht11.read(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
-    Serial.print("Read DHT11 failed, err="); Serial.println(err);
-    displayDHT11(temperature, humidity);
+  byte t, h;
+  if ((err = dht11.read(&t, &h, NULL)) != SimpleDHTErrSuccess) {
+    Serial.print("[DHT11] Read failed, err="); Serial.println(err);
+    if (isShow)  displayDHT11(temperature, humidity);
     return false;
   }
-
-  Serial.printf("DHT11 Read OK: %d *C, %d H\n", (int) temperature, (int) humidity);
+  temperature = t;
+  humidity = h;
+  Serial.printf("[DHT11] Read OK: %d *C, %d H\n", (int) temperature, (int) humidity);
   if (isShow) displayDHT11(temperature, humidity);
   return true;
 }
@@ -155,7 +157,7 @@ bool getDHT11(bool isShow) {
 bool getTime() {
 
   timeClient.update();
-  Serial.println("NTPTime:" + timeClient.getFormattedTime());
+  Serial.println("[NTPTime] " + timeClient.getFormattedTime());
 
   int hours = timeClient. getHours();
   int minutes = timeClient. getMinutes();
@@ -228,10 +230,10 @@ bool checkTCPIO() {
   //检测建立连接
   if (!client.connected()) {
     if (!client.connect(host, port)) {//5s timeout
-      Serial.println("TCP Connection Failed->" + host + ":" + port);
+      Serial.println("[TCP] Connection Failed->" + host + ":" + port);
       return false;
     } else {
-      Serial.println("TCP Connection OK->" + host + ":" + port);
+      Serial.println("[TCP] Connection OK->" + host + ":" + port);
       //建立连接发送设备id,授权
       uploadDeviceId();
       uploadData();
@@ -248,7 +250,7 @@ void listenTCP() {
   if (client.available() > 0) {
     //默认超时1秒
     String json = client.readStringUntil('\n');
-    Serial.println("TCP Read->" + json);
+    Serial.println("[TCP] Read->" + json);
 
     const size_t capacity = JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + 70;
     DynamicJsonDocument doc(capacity);
@@ -300,11 +302,11 @@ bool uploadDeviceId(int msg_id) {
 //发送TCP消息
 bool sendTCP(String msg) {
   if (client.connected()) {
-    Serial.println("TCP Send OK->" + msg);
+    Serial.println("[TCP] Send OK->" + msg);
     client.println(msg);
     return true;
   } else {
-    Serial.println("TCP Send Fail->" + msg);
+    Serial.println("[TCP] Send Fail->" + msg);
     return false;
   }
 }
@@ -497,12 +499,20 @@ const unsigned long HTTP_TIMEOUT = 5000;
 HTTPClient http;
 
 //------------------------上证指数-------------------------------
-
+int requestStockMillis = -1000000;
 void runStock() {
-  if (requestStock()) {
+  //60s内不请求
+  if (millis() - requestStockMillis < 60000 || requestStock()) {
+    Serial.print("[Stock] stockIndex: " +  );
+    Serial.print(stockIndex);
+    Serial.print(", stockRate: " +  );
+    Serial.println(stockRate);
+    
     displayDecimal(stockIndex);
     delayAndHandleTask(1500);
     displayDecimal(stockRate);
+  } else {
+
   }
 }
 
@@ -546,11 +556,11 @@ bool parseStockJson(String json)
   JsonObject data = doc["data"];
   stockIndex = data["index"];
   stockRate = data["rate"];
-  Serial.print("StockIndex: ");
+  Serial.print("[Http] StockIndex: ");
   Serial.print(stockIndex);
   Serial.print(" ,StockRate: ");
   Serial.println(stockRate);
-
+  requestStockMillis = millis();
   return true;
 }
 
@@ -617,7 +627,7 @@ bool parseJson(String json)
     errorCode(0x4);
     return false;
   }
-  Serial.print("UID: ");
+  Serial.print("[Http] UID: ");
   Serial.print(data_mid);
   Serial.print(" follower: ");
   Serial.println(data_follower);
