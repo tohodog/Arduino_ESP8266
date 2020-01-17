@@ -3,6 +3,7 @@
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
+#include <math.h>
 
 //WIFI信息
 String ssid = "ICBM";          //WiFi名
@@ -48,6 +49,10 @@ WiFiUDP ntpUDP;
 // update interval (in milliseconds, can be changed using setUpdateInterval() ).
 NTPClient timeClient(ntpUDP, ntpServer, gmtOffset_sec, 60000);
 
+//------------------------股票指数-------------------------------
+double stockIndex;
+double stockRate;
+String showstock = "s_sh000001";
 
 //-------------------------开关------------------------------
 const int pinSwitch = D0;
@@ -81,7 +86,7 @@ void setup()
   pinMode(pinSwitch, OUTPUT);
   switchPin(pinSwitch, isSwitchOpen);
 
-  getDHT11();
+  getDHT11(false);
   connWifi();
 }
 
@@ -91,14 +96,15 @@ void loop() {
   //  return;
 
   if (WiFi.status() == WL_CONNECTED) {
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 3; i++) {
       getTime();
       delayAndHandleTask(1000);
     }
-    getDHT11();
-    delayAndHandleTask(1000);
-    runBili();
-    delayAndHandleTask(1000);
+    getDHT11(true);
+    delayAndHandleTask(1500);
+    runStock();
+    getDHT11(true);
+    delayAndHandleTask(1500);
 
   } else {
     Serial.println("[WiFi] Waiting to reconnect...");
@@ -132,7 +138,7 @@ void connWifi() {
 }
 
 
-bool getDHT11() {
+bool getDHT11(bool isShow) {
   // start working...
   int err = SimpleDHTErrSuccess;
   if ((err = dht11.read(&temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
@@ -142,7 +148,7 @@ bool getDHT11() {
   }
 
   Serial.printf("DHT11 Read OK: %d *C, %d H\n", (int) temperature, (int) humidity);
-  displayDHT11(temperature, humidity);
+  if (isShow) displayDHT11(temperature, humidity);
   return true;
 }
 
@@ -172,7 +178,7 @@ void switchPin(int pinSwitch, byte low) {
   digitalWrite(pinSwitch, low ? LOW : HIGH);
 }
 
-int updataMillis = -99999999; //上次上报数据时间
+int updataMillis = 0; //上次上报数据时间
 //空闲时间检测是否有消息和任务
 bool delayAndHandleTask(int timeout) {
   //  Serial.print("delayAndHandleTask..." + timeout);
@@ -203,14 +209,18 @@ void checkSerialIO() {
     Serial.print("I received:"); //print I received
     Serial.println(c); //send what you read
     if (c == 's')smartConfig(30);
+    if (c == 't')displayTest();
   }
 }
 
-//-------------------------TCP START------------------------------
+//-----------------------------------------------------------
+//------------------------TCP客户端---------------------------
+//-----------------------------------------------------------
+
 WiFiClient client;
 //设备唯一标识,后台提前入库
 const char* DEVICE_ID = "S5FE62HHYDBI";
-String host = "api.reol.top";
+String host = "39.98.47.184";
 const uint16_t port = 8899;
 int MSG_ID = 0;
 //检测TCP连接消息
@@ -223,8 +233,8 @@ bool checkTCPIO() {
     } else {
       Serial.println("TCP Connection OK->" + host + ":" + port);
       //建立连接发送设备id,授权
-      String id = DEVICE_ID;
       uploadDeviceId();
+      uploadData();
     }
   } else {
     //tcp连接建立
@@ -300,11 +310,15 @@ bool sendTCP(String msg) {
 }
 //-------------------------TCP END------------------------------
 
-
+//-----------------------------------------------------------
+//------------------------数码管显示--------------------------
+//-----------------------------------------------------------
 void displayNumber(int number) //display number in the middle
 {
-  if (number < -9999999 || number > 99999999)
+  if (number < -9999999 || number > 99999999) {
+    Serial.println("Number out->" + number);
     return;
+  }
   int x = 1;//数字有几位
   int tmp = number;
   for (x = 1; tmp /= 10; x++);
@@ -326,19 +340,74 @@ void displayNumber(int number) //display number in the middle
     }
   }
 }
+//居中显示小数,秃头算算法中...
+void displayDecimal(double decimal)
+{
+  int number = (int) decimal;
+  boolean isNegative = number < 0;//是否负数
+  if (number < -9999999 || number > 99999999) {
+    Serial.println("Number out->" + number);
+    return;
+  }
+  int iLen;//整数字有几位
+  for (iLen = 0; number != 0; iLen++, number /= 10) ;
+  if (iLen == 0) iLen++;//没有整数,加一位0.
+
+  int dLen = 8 - iLen;//小数有几位
+  if (isNegative) dLen--;
+  number = (int) round(decimal * pow(10, dLen));//得到8位整数
+
+  //去除小数尾部的0,且至少保留2位小数
+  while (dLen > 2 && (0 == (number % 10))) {
+    number /= 10;
+    dLen--;
+  }
+
+  int len = iLen + dLen;//总共有几位
+  int sI = 4 + len / 2;
+  int eI = sI - len + 1;
+
+  for (int i = 1; i < 9; i++) {
+    if (i < eI || i > sI) {
+      if (isNegative && (i == (sI + 1)))
+        sendTubeCommand(i, 0xa);
+      else
+        sendTubeCommand(i, 0xf);
+    } else {
+      int character = number % 10;
+      if (character < 0) character = -character;
+      if (i == sI - iLen + 1) character += 128;
+      sendTubeCommand(i, character);
+      number /= 10;
+    }
+  }
+}
 
 void displayDHT11(int temperature, int humidity)
 {
-  sendTubeCommand(8, 0xf);
-  sendTubeCommand(7, 0xf);
-  sendTubeCommand(6, 0xf);
+  sendTubeCommand(8, 0xa);
+  sendTubeCommand(7, humidity / 10);
+  sendTubeCommand(6, humidity % 10);
+  sendTubeCommand(5, 0xa);
+  sendTubeCommand(4, 0xa);
+  sendTubeCommand(3, temperature / 10);
+  sendTubeCommand(2, temperature % 10);
+  sendTubeCommand(1, 0xa);
+}
 
-  sendTubeCommand(5, temperature / 10);
-  sendTubeCommand(4, temperature % 10);
-
-  sendTubeCommand(3, 0xa);
-  sendTubeCommand(2, humidity / 10);
-  sendTubeCommand(1, humidity % 10);
+void displayTest()
+{
+  for (int i = 0; i < 255; i++) {
+    sendTubeCommand(8, 0xa);
+    sendTubeCommand(7, i / 100 % 10);
+    sendTubeCommand(6, i / 10 % 10);
+    sendTubeCommand(5, i % 10);
+    sendTubeCommand(4, 0xa);
+    sendTubeCommand(3, 0xa);
+    sendTubeCommand(2, 0xa);
+    sendTubeCommand(1, i);
+    delay(500);
+  }
 }
 
 void initDisplay(int pro)
@@ -376,12 +445,12 @@ void sendTubeCommand(int command, int value)
   digitalWrite(pinTube, HIGH);
 }
 
-//智能配网 timeout-秒
+//智能配网 timeout/秒
 void smartConfig(int timeout)
 {
   WiFi.mode(WIFI_STA);
   Serial.print("\r\nWait for Smartconfig");
-  //  delay(2000);// 等待配网
+  delay(2000);// 等待配网
   WiFi.beginSmartConfig();
   timeout = timeout * 1000;
   while (timeout > 0)
@@ -413,12 +482,82 @@ void smartConfig(int timeout)
 
 }
 
+//AP热点配网
+void apConfig(int timeout)
+{
+  WiFi.mode(WIFI_STA);
+  Serial.print("\r\nWait for Smartconfig");
+}
+
+//-----------------------------------------------------------
+//------------------------Http-------------------------------
+//-----------------------------------------------------------
+
+const unsigned long HTTP_TIMEOUT = 5000;
+HTTPClient http;
+
+//------------------------上证指数-------------------------------
+
+void runStock() {
+  if (requestStock()) {
+    displayDecimal(stockIndex);
+    delayAndHandleTask(1500);
+    displayDecimal(stockRate);
+  }
+}
+
+bool requestStock() {
+  String api = "http://api.reol.top/stock/" + showstock;
+  //  Serial.println("Request: " + api);
+  bool r = false;
+  http.setTimeout(HTTP_TIMEOUT);
+  http.begin(api);
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    String response = http.getString();
+    r = parseStockJson(response);
+  } else {
+    Serial.printf("[HTTP] GET Stock failed, error: %s\n", http.errorToString(httpCode).c_str());
+    errorCode(0x2);
+    r = false;
+  }
+  http.end();
+  return r;
+}
+bool parseStockJson(String json)
+{
+  const size_t capacity = JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + 70;
+  DynamicJsonDocument doc(capacity);
+  deserializeJson(doc, json);
+
+  int code = doc["status"];
+  const char *message = doc["msg"];
+
+  if (code != 0) {
+    Serial.print("[API]Code:");
+    Serial.print(code);
+    Serial.print(" Message:");
+    Serial.println(message);
+    errorCode(0x3);
+    return false;
+  }
+
+  JsonObject data = doc["data"];
+  stockIndex = data["index"];
+  stockRate = data["rate"];
+  Serial.print("StockIndex: ");
+  Serial.print(stockIndex);
+  Serial.print(" ,StockRate: ");
+  Serial.println(stockRate);
+
+  return true;
+}
+
 
 //------------------------BILIBLI-------------------------------
 
 String biliuid = "423895";         //bilibili UID
-const unsigned long HTTP_TIMEOUT = 5000;
-HTTPClient http;
 String response;
 int follower = 0;
 
@@ -433,7 +572,7 @@ void runBili() {
 bool getJson()
 {
   String api = "http://api.bilibili.com/x/relation/stat?vmid=" + biliuid;
-  Serial.println("Request:" + api);
+  //  Serial.println("Request: " + api);
   bool r = false;
   http.setTimeout(HTTP_TIMEOUT);
   http.begin(api);
@@ -441,7 +580,7 @@ bool getJson()
 
   if (httpCode == HTTP_CODE_OK) {
     response = http.getString();
-    Serial.println(response);
+    //    Serial.println(response);
     r = true;
   } else {
     Serial.printf("[HTTP] GET JSON failed, error: %s\n", http.errorToString(httpCode).c_str());
