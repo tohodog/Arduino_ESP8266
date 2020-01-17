@@ -342,7 +342,7 @@ void displayNumber(int number) //display number in the middle
     }
   }
 }
-//居中显示小数,秃头算算法中...
+//居中显示小数,秃头算算法中...(精度不行...
 void displayDecimal(double decimal)
 {
   int number = (int) decimal;
@@ -360,12 +360,42 @@ void displayDecimal(double decimal)
   number = (int) round(decimal * pow(10, dLen));//得到8位整数
 
   //去除小数尾部的0,且至少保留2位小数
-  while (dLen > 2 && (0 == (number % 10))) {
+  while (dLen > 2 ) {//&& (0 == (number % 10))
     number /= 10;
     dLen--;
   }
 
   int len = iLen + dLen;//总共有几位
+  int sI = 4 + len / 2;
+  int eI = sI - len + 1;
+
+  for (int i = 1; i < 9; i++) {
+    if (i < eI || i > sI) {
+      if (isNegative && (i == (sI + 1)))
+        sendTubeCommand(i, 0xa);
+      else
+        sendTubeCommand(i, 0xf);
+    } else {
+      int character = number % 10;
+      if (character < 0) character = -character;
+      if (i == sI - iLen + 1) character += 128;
+      sendTubeCommand(i, character);
+      number /= 10;
+    }
+  }
+}
+//用int显示小数,防止精度问题,第二个参数为整数有几位
+void displayDecimal2(int number, int iLen)
+{
+  boolean isNegative = number < 0;//是否负数
+  if (number < -9999999 || number > 99999999) {
+    Serial.println("Number out->" + number);
+    return;
+  }
+  int len = 1;//总共有几位
+  int tmp = number;
+  for (len = 1; tmp /= 10; len++);
+
   int sI = 4 + len / 2;
   int eI = sI - len + 1;
 
@@ -503,11 +533,11 @@ int requestStockMillis = -1000000;
 void runStock() {
   //60s内不请求
   if (millis() - requestStockMillis < 60000 || requestStock()) {
-    Serial.print("[Stock] stockIndex: " +  );
+    Serial.print("[Stock] stockIndex: ");
     Serial.print(stockIndex);
-    Serial.print(", stockRate: " +  );
+    Serial.print(", stockRate: ");
     Serial.println(stockRate);
-    
+
     displayDecimal(stockIndex);
     delayAndHandleTask(1500);
     displayDecimal(stockRate);
