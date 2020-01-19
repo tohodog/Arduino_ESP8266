@@ -5,6 +5,8 @@
 #include <SPI.h>
 #include <math.h>
 
+//设备唯一标识,后台提前入库
+const char* DEVICE_ID = "S5FE62HHYDBI";
 //WIFI信息
 String ssid = "ICBM";          //WiFi名
 String password = "Androids";  //WiFi密码
@@ -50,8 +52,8 @@ WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, ntpServer, gmtOffset_sec, 60000);
 
 //------------------------股票指数-------------------------------
-double stockIndex;
-double stockRate;
+int stockIndex;//结果*100,保留两位小数,防止进度问题
+int stockRate;
 String showstock = "s_sh000001";
 
 //-------------------------开关------------------------------
@@ -212,6 +214,7 @@ void checkSerialIO() {
     Serial.println(c); //send what you read
     if (c == 's')smartConfig(30);
     if (c == 't')displayTest();
+    if (c == 'l')sendTubeCommand(10, Serial.read()-64); 
   }
 }
 
@@ -220,8 +223,6 @@ void checkSerialIO() {
 //-----------------------------------------------------------
 
 WiFiClient client;
-//设备唯一标识,后台提前入库
-const char* DEVICE_ID = "S5FE62HHYDBI";
 String host = "39.98.47.184";
 const uint16_t port = 8899;
 int MSG_ID = 0;
@@ -352,10 +353,9 @@ void displayDecimal(double decimal)
     return;
   }
   int iLen;//整数字有几位
-  for (iLen = 0; number != 0; iLen++, number /= 10) ;
-  if (iLen == 0) iLen++;//没有整数,加一位0.
+  for (iLen = 1; number /= 10; iLen++);
 
-  int dLen = 8 - iLen;//小数有几位
+  int dLen = 8 - iLen;//小数剩下几位
   if (isNegative) dLen--;
   number = (int) round(decimal * pow(10, dLen));//得到8位整数
 
@@ -364,28 +364,11 @@ void displayDecimal(double decimal)
     number /= 10;
     dLen--;
   }
-
-  int len = iLen + dLen;//总共有几位
-  int sI = 4 + len / 2;
-  int eI = sI - len + 1;
-
-  for (int i = 1; i < 9; i++) {
-    if (i < eI || i > sI) {
-      if (isNegative && (i == (sI + 1)))
-        sendTubeCommand(i, 0xa);
-      else
-        sendTubeCommand(i, 0xf);
-    } else {
-      int character = number % 10;
-      if (character < 0) character = -character;
-      if (i == sI - iLen + 1) character += 128;
-      sendTubeCommand(i, character);
-      number /= 10;
-    }
-  }
+  displayDecimal2(number, dLen);
 }
-//用int显示小数,防止精度问题,第二个参数为整数有几位
-void displayDecimal2(int number, int iLen)
+
+//用int显示小数,没有精度问题,第二个参数为小数有几位
+void displayDecimal2(int number, int dLen)
 {
   boolean isNegative = number < 0;//是否负数
   if (number < -9999999 || number > 99999999) {
@@ -395,6 +378,7 @@ void displayDecimal2(int number, int iLen)
   int len = 1;//总共有几位
   int tmp = number;
   for (len = 1; tmp /= 10; len++);
+  if (len < 1 + dLen)len = 1 + dLen;
 
   int sI = 4 + len / 2;
   int eI = sI - len + 1;
@@ -408,7 +392,7 @@ void displayDecimal2(int number, int iLen)
     } else {
       int character = number % 10;
       if (character < 0) character = -character;
-      if (i == sI - iLen + 1) character += 128;
+      if (i == eI + dLen) character += 128;
       sendTubeCommand(i, character);
       number /= 10;
     }
@@ -538,9 +522,9 @@ void runStock() {
     Serial.print(", stockRate: ");
     Serial.println(stockRate);
 
-    displayDecimal(stockIndex);
+    displayDecimal2(stockIndex, 2);
     delayAndHandleTask(1500);
-    displayDecimal(stockRate);
+    displayDecimal2(stockRate, 2);
   } else {
 
   }
@@ -584,8 +568,8 @@ bool parseStockJson(String json)
   }
 
   JsonObject data = doc["data"];
-  stockIndex = data["index"];
-  stockRate = data["rate"];
+  stockIndex = data["index2"];
+  stockRate = data["rate2"];
   Serial.print("[Http] StockIndex: ");
   Serial.print(stockIndex);
   Serial.print(" ,StockRate: ");
