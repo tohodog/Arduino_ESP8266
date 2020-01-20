@@ -214,7 +214,7 @@ void checkSerialIO() {
     Serial.println(c); //send what you read
     if (c == 's')smartConfig(30);
     if (c == 't')displayTest();
-    if (c == 'l')sendTubeCommand(10, Serial.read()-64); 
+    if (c == 'l')sendTubeCommand(10, Serial.read() - 64);
   }
 }
 
@@ -226,6 +226,8 @@ WiFiClient client;
 String host = "39.98.47.184";
 const uint16_t port = 8899;
 int MSG_ID = 0;
+int receiveHeartbeatTime = 0;
+
 //检测TCP连接消息
 bool checkTCPIO() {
   //检测建立连接
@@ -235,11 +237,18 @@ bool checkTCPIO() {
       return false;
     } else {
       Serial.println("[TCP] Connection OK->" + host + ":" + port);
+      receiveHeartbeatTime = millis(); //必须赋值,不然下面判断会超时断开
       //建立连接发送设备id,授权
       uploadDeviceId();
       uploadData();
     }
   } else {
+    if (millis() - receiveHeartbeatTime > 90000) {
+      //超过90s没收到心跳包,断开连接
+      Serial.println("[TCP] Heartbeat timeout, close connect->" + host + ":" + port);
+      client.stop();
+      return false;
+    }
     //tcp连接建立
     listenTCP();
   }
@@ -260,6 +269,7 @@ void listenTCP() {
     int msg_id = doc["msg_id"];
 
     if (command == 0) {//上报设备id/心跳包
+      receiveHeartbeatTime = millis(); //记录收到心跳包时间戳(服务端一分钟发一次),超过(60s+阈值s)没收到说明链接断开了,重连
       uploadDeviceId(msg_id);
     } else if (command == 1) { //立即上报信息
       uploadData(msg_id);
