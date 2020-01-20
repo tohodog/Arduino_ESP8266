@@ -65,7 +65,7 @@ byte isSwitchOpen = 0;
 void setup()
 {
   //打开串口
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial)
     continue;
 
