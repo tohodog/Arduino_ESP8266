@@ -1,3 +1,4 @@
+
 //-------------------------基础框架------------------------------
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
@@ -49,7 +50,7 @@ WiFiUDP ntpUDP;
 // You can specify the time server pool and the offset (in seconds, can be
 // changed later with setTimeOffset() ). Additionaly you can specify the
 // update interval (in milliseconds, can be changed using setUpdateInterval() ).
-NTPClient timeClient(ntpUDP, ntpServer, gmtOffset_sec, 60000);
+NTPClient timeClient(ntpUDP, ntpServer, gmtOffset_sec, 3600000);
 
 //------------------------股票指数-------------------------------
 int stockIndex;//结果*100,保留两位小数,防止进度问题
@@ -324,6 +325,151 @@ bool sendTCP(String msg) {
 //-------------------------TCP END------------------------------
 
 //-----------------------------------------------------------
+//------------------------Http-------------------------------
+//-----------------------------------------------------------
+
+const unsigned long HTTP_TIMEOUT = 5000;
+HTTPClient http;
+
+//------------------------上证指数-------------------------------
+int requestStockMillis = -1000000;
+void runStock() {
+  //60s内不请求
+  if (millis() - requestStockMillis < 60000 || requestStock()) {
+    Serial.print("[Stock] stockIndex: ");
+    Serial.print(stockIndex);
+    Serial.print(", stockRate: ");
+    Serial.println(stockRate);
+
+    displayDecimal2(stockIndex, 2);
+    delayAndHandleTask(1500);
+    displayDecimal2(stockRate, 2);
+  } else {
+
+  }
+}
+
+bool requestStock() {
+  String api = "http://api.reol.top/stock/" + showstock;
+  //  Serial.println("Request: " + api);
+  bool r = false;
+  http.setTimeout(HTTP_TIMEOUT);
+  http.begin(api);
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    String response = http.getString();
+    r = parseStockJson(response);
+  } else {
+    Serial.printf("[HTTP] GET Stock failed, error: %s\n", http.errorToString(httpCode).c_str());
+    errorCode(0x2);
+    r = false;
+  }
+  http.end();
+  return r;
+}
+bool parseStockJson(String json)
+{
+  const size_t capacity = JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + 70;
+  DynamicJsonDocument doc(capacity);
+  deserializeJson(doc, json);
+
+  int code = doc["status"];
+  const char *message = doc["msg"];
+
+  if (code != 0) {
+    Serial.print("[API]Code:");
+    Serial.print(code);
+    Serial.print(" Message:");
+    Serial.println(message);
+    errorCode(0x3);
+    return false;
+  }
+
+  JsonObject data = doc["data"];
+  stockIndex = data["index2"];
+  stockRate = data["rate2"];
+  Serial.print("[Http] StockIndex: ");
+  Serial.print(stockIndex);
+  Serial.print(" ,StockRate: ");
+  Serial.println(stockRate);
+  requestStockMillis = millis();
+  return true;
+}
+
+
+//------------------------BILIBLI-------------------------------
+
+String biliuid = "423895";         //bilibili UID
+String response;
+int follower = 0;
+
+void runBili() {
+  if (getJson()) {
+    if (parseJson(response)) {
+      displayNumber(follower);
+    }
+  }
+}
+
+bool getJson()
+{
+  String api = "http://api.bilibili.com/x/relation/stat?vmid=" + biliuid;
+  //  Serial.println("Request: " + api);
+  bool r = false;
+  http.setTimeout(HTTP_TIMEOUT);
+  http.begin(api);
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    response = http.getString();
+    //    Serial.println(response);
+    r = true;
+  } else {
+    Serial.printf("[HTTP] GET JSON failed, error: %s\n", http.errorToString(httpCode).c_str());
+    errorCode(0x2);
+    r = false;
+  }
+  http.end();
+  return r;
+}
+
+bool parseJson(String json)
+{
+  const size_t capacity = JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + 70;
+  DynamicJsonDocument doc(capacity);
+  deserializeJson(doc, json);
+
+  int code = doc["code"];
+  const char *message = doc["message"];
+
+  if (code != 0) {
+    Serial.print("[API]Code:");
+    Serial.print(code);
+    Serial.print(" Message:");
+    Serial.println(message);
+    errorCode(0x3);
+    return false;
+  }
+
+  JsonObject data = doc["data"];
+  unsigned long data_mid = data["mid"];
+  int data_follower = data["follower"];
+  if (data_mid == 0) {
+    Serial.println("[JSON] FORMAT ERROR");
+    errorCode(0x4);
+    return false;
+  }
+  Serial.print("[Http] UID: ");
+  Serial.print(data_mid);
+  Serial.print(" follower: ");
+  Serial.println(data_follower);
+
+  follower = data_follower;
+  return true;
+}
+
+//-----------------------------------------------------------
 //------------------------数码管显示--------------------------
 //-----------------------------------------------------------
 void displayNumber(int number) //display number in the middle
@@ -471,6 +617,27 @@ void sendTubeCommand(int command, int value)
   digitalWrite(pinTube, HIGH);
 }
 
+void Blink(byte PIN, int DELAY_MS, byte loops)
+{
+  pinMode(PIN, OUTPUT);
+  while (loops--)
+  {
+    digitalWrite(PIN,HIGH);
+    delay(DELAY_MS);
+    digitalWrite(PIN,LOW);
+    delay(DELAY_MS);  
+  }
+}
+//-----------------------------------------------------------
+//------------------------数据读写-------------------------------
+//-----------------------------------------------------------
+#include <SPIFlash.h>
+
+
+
+//-----------------------------------------------------------
+//------------------------配网-------------------------------
+//-----------------------------------------------------------
 //智能配网 timeout/秒
 void smartConfig(int timeout)
 {
@@ -513,149 +680,4 @@ void apConfig(int timeout)
 {
   WiFi.mode(WIFI_STA);
   Serial.print("\r\nWait for Smartconfig");
-}
-
-//-----------------------------------------------------------
-//------------------------Http-------------------------------
-//-----------------------------------------------------------
-
-const unsigned long HTTP_TIMEOUT = 5000;
-HTTPClient http;
-
-//------------------------上证指数-------------------------------
-int requestStockMillis = -1000000;
-void runStock() {
-  //60s内不请求
-  if (millis() - requestStockMillis < 60000 || requestStock()) {
-    Serial.print("[Stock] stockIndex: ");
-    Serial.print(stockIndex);
-    Serial.print(", stockRate: ");
-    Serial.println(stockRate);
-
-    displayDecimal2(stockIndex, 2);
-    delayAndHandleTask(1500);
-    displayDecimal2(stockRate, 2);
-  } else {
-
-  }
-}
-
-bool requestStock() {
-  String api = "http://api.reol.top/stock/" + showstock;
-  //  Serial.println("Request: " + api);
-  bool r = false;
-  http.setTimeout(HTTP_TIMEOUT);
-  http.begin(api);
-  int httpCode = http.GET();
-
-  if (httpCode == HTTP_CODE_OK) {
-    String response = http.getString();
-    r = parseStockJson(response);
-  } else {
-    Serial.printf("[HTTP] GET Stock failed, error: %s\n", http.errorToString(httpCode).c_str());
-    errorCode(0x2);
-    r = false;
-  }
-  http.end();
-  return r;
-}
-bool parseStockJson(String json)
-{
-  const size_t capacity = JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + 70;
-  DynamicJsonDocument doc(capacity);
-  deserializeJson(doc, json);
-
-  int code = doc["status"];
-  const char *message = doc["msg"];
-
-  if (code != 0) {
-    Serial.print("[API]Code:");
-    Serial.print(code);
-    Serial.print(" Message:");
-    Serial.println(message);
-    errorCode(0x3);
-    return false;
-  }
-
-  JsonObject data = doc["data"];
-  stockIndex = data["index2"];
-  stockRate = data["rate2"];
-  Serial.print("[Http] StockIndex: ");
-  Serial.print(stockIndex);
-  Serial.print(" ,StockRate: ");
-  Serial.println(stockRate);
-  requestStockMillis = millis();
-  return true;
-}
-
-
-//------------------------BILIBLI-------------------------------
-
-String biliuid = "423895";         //bilibili UID
-String response;
-int follower = 0;
-
-void runBili() {
-  if (getJson()) {
-    if (parseJson(response)) {
-      displayNumber(follower);
-    }
-  }
-}
-
-bool getJson()
-{
-  String api = "http://api.bilibili.com/x/relation/stat?vmid=" + biliuid;
-  //  Serial.println("Request: " + api);
-  bool r = false;
-  http.setTimeout(HTTP_TIMEOUT);
-  http.begin(api);
-  int httpCode = http.GET();
-
-  if (httpCode == HTTP_CODE_OK) {
-    response = http.getString();
-    //    Serial.println(response);
-    r = true;
-  } else {
-    Serial.printf("[HTTP] GET JSON failed, error: %s\n", http.errorToString(httpCode).c_str());
-    errorCode(0x2);
-    r = false;
-  }
-  http.end();
-  return r;
-}
-
-bool parseJson(String json)
-{
-  const size_t capacity = JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + 70;
-  DynamicJsonDocument doc(capacity);
-  deserializeJson(doc, json);
-
-  int code = doc["code"];
-  const char *message = doc["message"];
-
-  if (code != 0) {
-    Serial.print("[API]Code:");
-    Serial.print(code);
-    Serial.print(" Message:");
-    Serial.println(message);
-    errorCode(0x3);
-    return false;
-  }
-
-  JsonObject data = doc["data"];
-  unsigned long data_mid = data["mid"];
-  int data_follower = data["follower"];
-  if (data_mid == 0) {
-    Serial.println("[JSON] FORMAT ERROR");
-    errorCode(0x4);
-    return false;
-  }
-  Serial.print("[Http] UID: ");
-  Serial.print(data_mid);
-  Serial.print(" follower: ");
-  Serial.println(data_follower);
-
-  follower = data_follower;
-  return true;
 }
