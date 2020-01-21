@@ -78,7 +78,7 @@ void setup()
   digitalWrite(pinTube, LOW);
   sendTubeCommand(12, 1);         //Shutdown,open
   sendTubeCommand(15, 0);         //DisplayTest,no
-  sendTubeCommand(10, 8);        //Intensity,15(max)
+  sendTubeCommand(10, 10);        //Intensity,15(max)
   sendTubeCommand(11, scanLimit); //ScanLimit,8-1=7
   sendTubeCommand(9, 255);        //DecodeMode,Code B decode for digits 7-0
   digitalWrite(pinTube, HIGH);
@@ -631,7 +631,7 @@ void Blink(byte PIN, int DELAY_MS, byte loops)
 //-----------------------------------------------------------
 //------------------------数据读写-------------------------------
 //-----------------------------------------------------------
-#include <SPIFlash.h>
+//#include <SPIFlash.h>
 
 
 
