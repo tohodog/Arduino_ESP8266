@@ -9,8 +9,11 @@
 //设备唯一标识,后台提前入库
 const char* DEVICE_ID = "S5FE62HHYDBI";
 //WIFI信息
-String ssid = "ICBM";          //WiFi名
-String password = "Androids";  //WiFi密码
+String ssid = "ziyuetechnb.com";          //WiFi名
+String password = "teyuetech.com.28138589";  //WiFi密码
+String ssidArr[]={"ICBM","ziyuetechnb.com"};
+String passwordArr[]={"Androids","teyuetech.com.28138589"};
+
 
 //-------------------------DigitalTube------------------------------
 //硬件连接说明：
@@ -74,6 +77,10 @@ void setup()
 
   //init digitalTube
   SPI.begin();
+<<<<<<< HEAD
+
+  setupDisplay();
+=======
   pinMode(pinTube, OUTPUT);
   digitalWrite(pinTube, LOW);
   sendTubeCommand(12, 1);         //Shutdown,open
@@ -82,6 +89,7 @@ void setup()
   sendTubeCommand(11, scanLimit); //ScanLimit,8-1=7
   sendTubeCommand(9, 255);        //DecodeMode,Code B decode for digits 7-0
   digitalWrite(pinTube, HIGH);
+>>>>>>> ffc4acc6dda118a76363c1ee0847c0517badfb95
   initDisplay(0);
   Serial.println("DigitalTube Ready");
 
@@ -115,7 +123,7 @@ void loop() {
     initDisplay(millis() / 100);
     delay(100);
   }
-
+  setupDisplay();
 }
 
 void connWifi() {
@@ -581,7 +589,17 @@ void displayTest()
     delay(500);
   }
 }
-
+void setupDisplay()
+{
+  pinMode(pinTube, OUTPUT);
+  digitalWrite(pinTube, LOW);
+  sendTubeCommand(12, 1);         //Shutdown,open
+  sendTubeCommand(15, 0);         //DisplayTest,no
+  sendTubeCommand(10, 8);        //Intensity,15(max)
+  sendTubeCommand(11, scanLimit); //ScanLimit,8-1=7
+  sendTubeCommand(9, 255);        //DecodeMode,Code B decode for digits 7-0
+  digitalWrite(pinTube, HIGH);
+}
 void initDisplay(int pro)
 {
   pro = pro % 8;
@@ -631,10 +649,22 @@ void Blink(byte PIN, int DELAY_MS, byte loops)
 //-----------------------------------------------------------
 //------------------------数据读写-------------------------------
 //-----------------------------------------------------------
+<<<<<<< HEAD
+#include <EEPROM.h>
+void writeEEP() {
+  int addr = 0;
+  byte val=110;
+  EEPROM.write(addr, val);
+  EEPROM.commit();
+  byte value = EEPROM.read(addr);
+  
+}
+=======
 //#include <SPIFlash.h>
 
 
 
+>>>>>>> ffc4acc6dda118a76363c1ee0847c0517badfb95
 //-----------------------------------------------------------
 //------------------------配网-------------------------------
 //-----------------------------------------------------------
