@@ -37,7 +37,7 @@ const int scanLimit = 7;
 const int pinDHT11 = D4;
 SimpleDHT11 dht11(pinDHT11);
 // read without samples.
-byte temperature = 99;
+byte temperature = 0;
 byte humidity = 0;
 
 //-------------------------网络时间------------------------------
@@ -77,19 +77,9 @@ void setup()
 
   //init digitalTube
   SPI.begin();
-<<<<<<< HEAD
 
   setupDisplay();
-=======
-  pinMode(pinTube, OUTPUT);
-  digitalWrite(pinTube, LOW);
-  sendTubeCommand(12, 1);         //Shutdown,open
-  sendTubeCommand(15, 0);         //DisplayTest,no
-  sendTubeCommand(10, 10);        //Intensity,15(max)
-  sendTubeCommand(11, scanLimit); //ScanLimit,8-1=7
-  sendTubeCommand(9, 255);        //DecodeMode,Code B decode for digits 7-0
-  digitalWrite(pinTube, HIGH);
->>>>>>> ffc4acc6dda118a76363c1ee0847c0517badfb95
+
   initDisplay(0);
   Serial.println("DigitalTube Ready");
 
@@ -565,14 +555,14 @@ void displayDecimal2(int number, int dLen)
 
 void displayDHT11(int temperature, int humidity)
 {
-  sendTubeCommand(8, 0xa);
+  sendTubeCommand(8, 0xf);
   sendTubeCommand(7, humidity / 10);
   sendTubeCommand(6, humidity % 10);
-  sendTubeCommand(5, 0xa);
-  sendTubeCommand(4, 0xa);
+  sendTubeCommand(5, 0xf);
+  sendTubeCommand(4, 0xf);
   sendTubeCommand(3, temperature / 10);
   sendTubeCommand(2, temperature % 10);
-  sendTubeCommand(1, 0xa);
+  sendTubeCommand(1, 0xf);
 }
 
 void displayTest()
@@ -649,7 +639,6 @@ void Blink(byte PIN, int DELAY_MS, byte loops)
 //-----------------------------------------------------------
 //------------------------数据读写-------------------------------
 //-----------------------------------------------------------
-<<<<<<< HEAD
 #include <EEPROM.h>
 void writeEEP() {
   int addr = 0;
@@ -659,12 +648,10 @@ void writeEEP() {
   byte value = EEPROM.read(addr);
   
 }
-=======
 //#include <SPIFlash.h>
 
 
 
->>>>>>> ffc4acc6dda118a76363c1ee0847c0517badfb95
 //-----------------------------------------------------------
 //------------------------配网-------------------------------
 //-----------------------------------------------------------
