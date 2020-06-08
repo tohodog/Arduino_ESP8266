@@ -74,7 +74,7 @@ void setup()
   Serial.begin(115200);
   while (!Serial)
     continue;
-  Serial.println("\nQsong project for esp8266, version v1.0");
+  Serial.println("\nQsong project for esp8266, version v1.1");
 
   //init digitalTube
   SPI.begin();
@@ -88,8 +88,7 @@ void setup()
   switchPin(pinSwitch, isSwitchOpen);
 
   getDHT11(false);
-//  connWifi();
-  autoConfig();
+  connWifi();
 }
 
 void loop() {
@@ -122,22 +121,33 @@ void connWifi() {
     WiFi.begin(ssid, password);
   }
   Serial.print("[WiFi] Connecting...");
-  Serial.printf("SSID:%s Password:%s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
-
+  Serial.printf("SSID:%s ,Password:%s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+  
   int i = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(100);
     Serial.print(".");
     initDisplay(i++);
 
-    //30秒沒连上网打开智能配网模式
+    //30秒沒连上网打开配网模式
     if (i % 300 == 0) {
-      smartConfig(30);
-      WiFi.begin(ssid, password);
+      autoConfig(120);
+//      smartConfig(30);
     }
   }
-  Serial.print("\n[WIFI] connected, IP address: ");
-  Serial.println(WiFi.localIP());
+  
+  if(WiFi.status() == WL_CONNECTED){
+    Serial.print("\n[WIFI] Connected, IP address: ");
+    Serial.println(WiFi.localIP());
+    Serial.printf("SSID:%s Password:%s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+  }else{
+    Serial.println("[WIFI] failed to connect and hit timeout");
+    delay(3000);
+    //reset and try again, or maybe put it to deep sleep
+    ESP.reset();
+    delay(5000);
+  }
+  
 }
 
 
@@ -707,31 +717,20 @@ void smartConfig(int timeout)
 }
 
 //AP热点配网
-void autoConfig()
+boolean autoConfig(int timeout)
 { 
+  Serial.print("[WiFiManager] AP Config net start...");
   displayNumber(88888888);
   WiFiManager wifiManager;
   //wifiManager.resetSettings();
-  wifiManager.setTimeout(180);
+
+  wifiManager.setTimeout(timeout);
   //set custom ip for portal
   //wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
 
   wifiManager.autoConnect("ESP8266-QSong");
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("WIFI connected, IP address: ");
-    Serial.println(WiFi.localIP());
-    Serial.printf("SSID:%s\r\n", WiFi.SSID().c_str());
-    Serial.printf("PSW:%s\r\n", WiFi.psk().c_str());
-    
-  } else {
-    Serial.println("[WiFiManager] failed to connect and hit timeout");
-    delay(3000);
-    //reset and try again, or maybe put it to deep sleep
-    ESP.reset();
-    delay(5000);
-  }
-  
+  return WiFi.status() == WL_CONNECTED;
 }
 
 //AP热点配网
