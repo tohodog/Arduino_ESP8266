@@ -6,13 +6,15 @@
 #include <SPI.h>
 #include <math.h>
 
+#include <DNSServer.h>            //Local DNS Server used for redirecting all requests to the configuration portal
+#include <ESP8266WebServer.h>     //Local WebServer used to serve the configuration portal
+#include <WiFiManager.h>   
+
 //设备唯一标识,后台提前入库
 const char* DEVICE_ID = "S5FE62HHYDBI";
 //WIFI信息
 String ssid = "ziyuetechnb.com";          //WiFi名
 String password = "teyuetech.com.28138589";  //WiFi密码
-String ssidArr[]={"ICBM","ziyuetechnb.com"};
-String passwordArr[]={"Androids","teyuetech.com.28138589"};
 
 
 //-------------------------DigitalTube------------------------------
@@ -72,14 +74,12 @@ void setup()
   Serial.begin(115200);
   while (!Serial)
     continue;
-
   Serial.println("\nQsong project for esp8266, version v1.0");
 
   //init digitalTube
   SPI.begin();
 
   setupDisplay();
-
   initDisplay(0);
   Serial.println("DigitalTube Ready");
 
@@ -88,25 +88,22 @@ void setup()
   switchPin(pinSwitch, isSwitchOpen);
 
   getDHT11(false);
-  connWifi();
+//  connWifi();
+  autoConfig();
 }
 
 void loop() {
-
-  //  displayNumber(follower -= 99);
-  //  return;
 
   if (WiFi.status() == WL_CONNECTED) {
     for (int i = 0; i < 3; i++) {
       getTime();
       delayAndHandleTask(1000);
     }
+    getDHT11(false);
+    runStock();
+    delayAndHandleTask(1500);
     getDHT11(true);
     delayAndHandleTask(1500);
-    runStock();
-    getDHT11(false);
-    delayAndHandleTask(1500);
-
   } else {
     Serial.println("[WiFi] Waiting to reconnect...");
     //    errorCode(0x1);
@@ -117,11 +114,16 @@ void loop() {
 }
 
 void connWifi() {
-  Serial.println("[WiFi] SSID:" + ssid + " Password:" + password);
-  Serial.print("[WiFi] Connecting...");
-
+  
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  if (WiFi.SSID() != ""){
+    WiFi.begin();
+  }else{
+    WiFi.begin(ssid, password);
+  }
+  Serial.print("[WiFi] Connecting...");
+  Serial.printf("SSID:%s Password:%s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+
   int i = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(100);
@@ -339,9 +341,8 @@ void runStock() {
     Serial.print(", stockRate: ");
     Serial.println(stockRate);
 
-    displayDecimal2(stockIndex, 2);
-    delayAndHandleTask(1500);
-    displayDecimal2(stockRate, 2);
+    displayStock(stockIndex,stockRate);
+    
   } else {
 
   }
@@ -552,6 +553,19 @@ void displayDecimal2(int number, int dLen)
     }
   }
 }
+//显示上证指数+百分比
+void displayStock(int stockIndex, int stockRote)
+{
+  stockIndex/=100;
+  sendTubeCommand(8, stockIndex/1000%10);
+  sendTubeCommand(7, stockIndex/100%10);
+  sendTubeCommand(6, stockIndex/10%10);
+  sendTubeCommand(5, stockIndex%10);
+  sendTubeCommand(4, stockRote<0?0xa:0xf);
+  sendTubeCommand(3, stockRote/100 % 10+128);
+  sendTubeCommand(2, stockRote/10 % 10);
+  sendTubeCommand(1, stockRote % 10);
+}
 
 void displayDHT11(int temperature, int humidity)
 {
@@ -690,6 +704,34 @@ void smartConfig(int timeout)
     Serial.println("\nSmartConfig Fail->Timeout!");
   }
 
+}
+
+//AP热点配网
+void autoConfig()
+{ 
+  displayNumber(88888888);
+  WiFiManager wifiManager;
+  //wifiManager.resetSettings();
+  wifiManager.setTimeout(180);
+  //set custom ip for portal
+  //wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
+
+  wifiManager.autoConnect("ESP8266-QSong");
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("WIFI connected, IP address: ");
+    Serial.println(WiFi.localIP());
+    Serial.printf("SSID:%s\r\n", WiFi.SSID().c_str());
+    Serial.printf("PSW:%s\r\n", WiFi.psk().c_str());
+    
+  } else {
+    Serial.println("[WiFiManager] failed to connect and hit timeout");
+    delay(3000);
+    //reset and try again, or maybe put it to deep sleep
+    ESP.reset();
+    delay(5000);
+  }
+  
 }
 
 //AP热点配网
