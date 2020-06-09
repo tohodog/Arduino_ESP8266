@@ -1,4 +1,5 @@
-
+//开发板esp8266 https://downloads.arduino.cc/packages/package_index.json
+//开发板esp32 https://dl.espressif.com/dl/package_esp32_index.json
 //-------------------------基础框架------------------------------
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
@@ -100,9 +101,9 @@ void loop() {
     }
     getDHT11(false);
     runStock();
-    delayAndHandleTask(1500);
+    delayAndHandleTask(2000);
     getDHT11(true);
-    delayAndHandleTask(1500);
+    delayAndHandleTask(2000);
   } else {
     Serial.println("[WiFi] Waiting to reconnect...");
     //    errorCode(0x1);
@@ -162,7 +163,7 @@ bool getDHT11(bool isShow) {
   }
   temperature = t;
   humidity = h;
-  Serial.printf("[DHT11] Read OK: %d *C, %d H\n", (int) temperature, (int) humidity);
+  Serial.printf("[DHT11] Read OK: %d *C, %d H \n", (int) temperature, (int) humidity);
   if (isShow) displayDHT11(temperature, humidity);
   return true;
 }
@@ -571,7 +572,9 @@ void displayStock(int stockIndex, int stockRote)
   sendTubeCommand(7, stockIndex/100%10);
   sendTubeCommand(6, stockIndex/10%10);
   sendTubeCommand(5, stockIndex%10);
+  
   sendTubeCommand(4, stockRote<0?0xa:0xf);
+  if(stockRote<0)stockRote=-stockRote;
   sendTubeCommand(3, stockRote/100 % 10+128);
   sendTubeCommand(2, stockRote/10 % 10);
   sendTubeCommand(1, stockRote % 10);
@@ -583,7 +586,9 @@ void displayDHT11(int temperature, int humidity)
   sendTubeCommand(7, humidity / 10);
   sendTubeCommand(6, humidity % 10);
   sendTubeCommand(5, 0xf);
-  sendTubeCommand(4, 0xf);
+  
+  sendTubeCommand(4, temperature<0?0xa:0xf);
+  if(temperature<0)temperature=-temperature;
   sendTubeCommand(3, temperature / 10);
   sendTubeCommand(2, temperature % 10);
   sendTubeCommand(1, 0xf);
@@ -610,8 +615,8 @@ void setupDisplay()
   sendTubeCommand(12, 1);         //Shutdown,open
   sendTubeCommand(15, 0);         //DisplayTest,no
   sendTubeCommand(10, 8);        //Intensity,15(max)
-  sendTubeCommand(11, scanLimit); //ScanLimit,8-1=7
-  sendTubeCommand(9, 255);        //DecodeMode,Code B decode for digits 7-0
+  sendTubeCommand(11, scanLimit); //ScanLimit,8-1=7 //8只LED全用
+  sendTubeCommand(9, 255);        //DecodeMode,Code B decode for digits 7-0 //选用全译码模式, 不译码就是数码管8个发光点对应8个bit
   digitalWrite(pinTube, HIGH);
 }
 void initDisplay(int pro)
@@ -683,7 +688,7 @@ void writeEEP() {
 void smartConfig(int timeout)
 {
   WiFi.mode(WIFI_STA);
-  Serial.print("\r\nWait for Smartconfig");
+  Serial.print("\nWait for Smartconfig");
   delay(2000);// 等待配网
   WiFi.beginSmartConfig();
   timeout = timeout * 1000;
@@ -698,8 +703,8 @@ void smartConfig(int timeout)
       Serial.println("SmartConfig Success->");
       ssid = WiFi.SSID().c_str();
       password = WiFi.psk().c_str();
-      Serial.printf("SSID:%s\r\n", WiFi.SSID().c_str());
-      Serial.printf("PSW:%s\r\n", WiFi.psk().c_str());
+      Serial.printf("SSID:%s\n", WiFi.SSID().c_str());
+      Serial.printf("PSW:%s\n", WiFi.psk().c_str());
       WiFi.setAutoConnect(true);  // 设置自动连接
       break;
     }
@@ -737,5 +742,5 @@ boolean autoConfig(int timeout)
 void apConfig(int timeout)
 {
   WiFi.mode(WIFI_STA);
-  Serial.print("\r\nWait for Smartconfig");
+  Serial.print("\nWait for Smartconfig");
 }
