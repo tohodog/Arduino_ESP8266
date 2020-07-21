@@ -62,6 +62,7 @@ NTPClient timeClient(ntpUDP, ntpServer, gmtOffset_sec, 3600000);
 int stockIndex;//结果*100,保留两位小数,防止进度问题
 int stockRate;
 String showstock = "s_sh000001";
+bool isTrade;
 
 //-------------------------开关------------------------------
 const int pinSwitch = D0;
@@ -93,7 +94,6 @@ void setup()
 }
 
 void loop() {
-
   if (WiFi.status() == WL_CONNECTED) {
     for (int i = 0; i < 3; i++) {
       getTime();
@@ -101,13 +101,15 @@ void loop() {
     }
     getDHT11(false);
     runStock();
-    delayAndHandleTask(2000);
+    delayAndHandleTask(isTrade?5000:2000);
     getDHT11(true);
     delayAndHandleTask(2000);
   } else {
-    Serial.println("[WiFi] Waiting to reconnect...");
+    int i = millis() / 100;
+    if (i%10==0)
+      Serial.println("[WiFi] Waiting to reconnect...");
     //    errorCode(0x1);
-    initDisplay(millis() / 100);
+    initDisplay(i);
     delay(100);
   }
   setupDisplay();
@@ -130,9 +132,10 @@ void connWifi() {
     Serial.print(".");
     initDisplay(i++);
 
-    //30秒沒连上网打开配网模式
-    if (i % 300 == 0) {
-      autoConfig(120);
+    //15秒沒连上网打开配网模式
+    if (i % 150 == 0) {
+      autoConfig(150);
+      break;
 //      smartConfig(30);
     }
   }
@@ -345,8 +348,13 @@ HTTPClient http;
 //------------------------上证指数-------------------------------
 int requestStockMillis = -1000000;
 void runStock() {
-  //60s内不请求
-  if (millis() - requestStockMillis < 60000 || requestStock()) {
+  
+  int t = timeClient. getHours()*60+ timeClient. getMinutes();
+  isTrade=(t>569&t<691)|(t>779&t<901);
+  
+  
+  //?s内不请求
+  if (millis() - requestStockMillis < (isTrade?10000:300000) || requestStock()) {
     Serial.print("[Stock] stockIndex: ");
     Serial.print(stockIndex);
     Serial.print(", stockRate: ");
@@ -721,11 +729,19 @@ void smartConfig(int timeout)
 
 }
 
-//AP热点配网
+//AP热点配网库
 boolean autoConfig(int timeout)
 { 
   Serial.print("[WiFiManager] AP Config net start...");
-  displayNumber(88888888);
+  sendTubeCommand(8, 1);
+  sendTubeCommand(7, 9);
+  sendTubeCommand(6, 2+128);
+  sendTubeCommand(5, 1);
+  sendTubeCommand(4, 6);
+  sendTubeCommand(3, 8+128);
+  sendTubeCommand(2, 4+128);
+  sendTubeCommand(1, 1);
+  
   WiFiManager wifiManager;
   //wifiManager.resetSettings();
 
