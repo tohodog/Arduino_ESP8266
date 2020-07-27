@@ -12,10 +12,10 @@
 #include <WiFiManager.h>   
 
 //设备唯一标识,后台提前入库
-const char* DEVICE_ID = "S5FE62HHYDBI";
+const char* DEVICE_ID = "QS-A002";
 //WIFI信息
-String ssid = "ziyuetechnb.com";          //WiFi名
-String password = "teyuetech.com.28138589";  //WiFi密码
+String ssid = "ICBM";          //WiFi名
+String password = "Androids";  //WiFi密码
 
 
 //-------------------------DigitalTube------------------------------
@@ -24,10 +24,9 @@ String password = "teyuetech.com.28138589";  //WiFi密码
 //  VCC   --- 3V(3.3V)
 //  GND   --- G (GND)
 //  DIN   --- D7(GPIO13)
-//  CS    --- D1(GPIO5)
+//  CS    --- D4(GPIO2)
 //  CLK   --- D5(GPIO14)
-const int pinTube = 5;
-const int scanLimit = 7;
+const int pinTube = D4;
 
 //-------------------------DHT11------------------------------
 //硬件连接说明：
@@ -37,11 +36,27 @@ const int scanLimit = 7;
 
 #include <SimpleDHT.h>
 
-const int pinDHT11 = D4;
+const int pinDHT11 = D6;
 SimpleDHT11 dht11(pinDHT11);
 // read without samples.
 byte temperature = 0;
 byte humidity = 0;
+
+//-------------------------BMP280------------------------------
+#include <Adafruit_BMP280.h>
+//  VCC   --- 3V(3.3V)
+//  GND   --- G (GND)
+//  DIN   --- D2
+//  CS    --- D1(GPIO5)
+#define BMP_SCK  (13)
+#define BMP_MISO (12)
+#define BMP_MOSI (11)
+#define BMP_CS   (10)
+
+Adafruit_BMP280 bmp; // I2C
+float bmp280_pressure;//气压
+float bmp280_temperature;//温度
+float bmp280_altitude;//海拔
 
 //-------------------------网络时间------------------------------
 
@@ -57,7 +72,7 @@ WiFiUDP ntpUDP;
 // changed later with setTimeOffset() ). Additionaly you can specify the
 // update interval (in milliseconds, can be changed using setUpdateInterval() ).
 NTPClient timeClient(ntpUDP, ntpServer, gmtOffset_sec, 3600000);
-
+bool isSleep;
 //------------------------股票指数-------------------------------
 int stockIndex;//结果*100,保留两位小数,防止进度问题
 int stockRate;
@@ -65,9 +80,14 @@ String showstock = "s_sh000001";
 bool isTrade;
 
 //-------------------------开关------------------------------
-const int pinSwitch = D0;
-byte isSwitchOpen = 0;
-
+const int pin0 = D0;
+byte pin0Low = 0;
+const int pin3 = D3;
+byte pin3Low = 0;
+const int pin6 = D6;
+byte pin6Low = 0;
+const int pin8 = D8;
+byte pin8Low = 0;
 //-------------------------logic------------------------------
 
 void setup()
@@ -86,8 +106,13 @@ void setup()
   Serial.println("DigitalTube Ready");
 
   //init switch
-  pinMode(pinSwitch, OUTPUT);
-  switchPin(pinSwitch, isSwitchOpen);
+  pinMode(pin0, OUTPUT);
+  pin0Low = digitalRead(pin0);
+  pin3Low = digitalRead(pin3);
+  pin6Low = digitalRead(pin6);
+  pin8Low = digitalRead(pin8);
+
+  getBMP280(false);
 
   getDHT11(false);
   connWifi();
@@ -99,11 +124,15 @@ void loop() {
       getTime();
       delayAndHandleTask(1000);
     }
-    getDHT11(false);
     runStock();
     delayAndHandleTask(isTrade?5000:2000);
-    getDHT11(true);
-    delayAndHandleTask(2000);
+
+    if(!isTrade){
+      getBMP280(true);
+      delayAndHandleTask(2000);
+    }else{
+      getBMP280(false);
+    }
   } else {
     int i = millis() / 100;
     if (i%10==0)
@@ -116,7 +145,7 @@ void loop() {
 }
 
 void connWifi() {
-  
+
   WiFi.mode(WIFI_STA);
   if (WiFi.SSID() != ""){
     WiFi.begin();
@@ -125,7 +154,7 @@ void connWifi() {
   }
   Serial.print("[WiFi] Connecting...");
   Serial.printf("SSID:%s ,Password:%s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
-  
+
   int i = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(100);
@@ -139,7 +168,7 @@ void connWifi() {
 //      smartConfig(30);
     }
   }
-  
+
   if(WiFi.status() == WL_CONNECTED){
     Serial.print("\n[WIFI] Connected, IP address: ");
     Serial.println(WiFi.localIP());
@@ -151,7 +180,7 @@ void connWifi() {
     ESP.reset();
     delay(5000);
   }
-  
+
 }
 
 
@@ -171,6 +200,30 @@ bool getDHT11(bool isShow) {
   return true;
 }
 
+bool getBMP280(bool isShow) {
+  // start working...
+  if (!bmp.begin()) {
+    Serial.println("[BMP280] Could not find a valid BMP280 sensor, check wiring!");
+    return false;
+  }
+
+  //init bmp280
+  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
+                  Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
+                  Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
+                  Adafruit_BMP280::FILTER_X16,      /* Filtering. */
+                  Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
+
+  bmp280_temperature = bmp.readTemperature();// 气压
+  bmp280_pressure =  bmp.readPressure();// 温度
+  bmp280_altitude =  bmp.readAltitude(1010.25);// Adjusted to local forecast!  海拔
+
+  Serial.printf("[BMP280] Read OK: %f *C, %f P ,%f m\n", bmp280_pressure, bmp280_temperature, bmp280_altitude);
+
+  if (isShow) displayBMP280(bmp280_pressure, bmp280_temperature);
+  return true;
+}
+
 bool getTime() {
 
   timeClient.update();
@@ -179,6 +232,8 @@ bool getTime() {
   int hours = timeClient. getHours();
   int minutes = timeClient. getMinutes();
   int seconds = timeClient. getSeconds();
+
+  isSleep= hours<7||hours>=23;
 
   sendTubeCommand(8, hours / 10);
   sendTubeCommand(7, hours % 10);
@@ -287,10 +342,21 @@ void listenTCP() {
       receiveHeartbeatTime = millis(); //记录收到心跳包时间戳(服务端一分钟发一次),超过(60s+阈值s)没收到说明链接断开了,重连
       uploadDeviceId(msg_id);
     } else if (command == 1) { //立即上报信息
+      getBMP280(false);
       uploadData(msg_id);
     } else if (command == 2) { //控制开关
-      isSwitchOpen = doc["data"];
-      switchPin(pinSwitch, isSwitchOpen);
+      int data = doc["data"];
+      int pin = doc["pin"];
+//      if(pin==NULL)pin=0;
+      if (pin==3){
+        switchPin(pin3, pin3Low=data);
+      }else if (pin==6){
+        switchPin(pin6, pin6Low=data);
+      }else if (pin==8){
+        switchPin(pin8, pin8Low=data);
+      }else{
+        switchPin(pin0, pin0Low=data);
+      }
       uploadData(msg_id);
     }
 
@@ -305,9 +371,14 @@ bool uploadData(int msg_id) {
   StaticJsonDocument<200> doc;
   doc["msg_id"] = msg_id;
   doc["type"] = 1;
-  doc["switch"] = isSwitchOpen;
-  doc["temp"] = temperature;
-  doc["humi"] = humidity;
+  doc["pin0"] = pin0Low;
+  doc["pin3"] = pin3Low;
+  doc["pin6"] = pin6Low;
+  doc["pin8"] = pin8Low;
+
+  doc["temp"] = bmp280_temperature;
+  doc["pressure"] = bmp280_pressure;
+  doc["altitud"] = bmp280_altitude;
   String output;
   serializeJson(doc, output);
   return sendTCP(output);
@@ -348,11 +419,11 @@ HTTPClient http;
 //------------------------上证指数-------------------------------
 int requestStockMillis = -1000000;
 void runStock() {
-  
+
   int t = timeClient. getHours()*60+ timeClient. getMinutes();
-  isTrade=(t>569&t<691)|(t>779&t<901);
-  
-  
+  isTrade=(t>565&t<691)|(t>779&t<901);
+
+
   //?s内不请求
   if (millis() - requestStockMillis < (isTrade?10000:300000) || requestStock()) {
     Serial.print("[Stock] stockIndex: ");
@@ -361,7 +432,7 @@ void runStock() {
     Serial.println(stockRate);
 
     displayStock(stockIndex,stockRate);
-    
+
   } else {
 
   }
@@ -415,77 +486,6 @@ bool parseStockJson(String json)
   return true;
 }
 
-
-//------------------------BILIBLI-------------------------------
-
-String biliuid = "423895";         //bilibili UID
-String response;
-int follower = 0;
-
-void runBili() {
-  if (getJson()) {
-    if (parseJson(response)) {
-      displayNumber(follower);
-    }
-  }
-}
-
-bool getJson()
-{
-  String api = "http://api.bilibili.com/x/relation/stat?vmid=" + biliuid;
-  //  Serial.println("Request: " + api);
-  bool r = false;
-  http.setTimeout(HTTP_TIMEOUT);
-  http.begin(api);
-  int httpCode = http.GET();
-
-  if (httpCode == HTTP_CODE_OK) {
-    response = http.getString();
-    //    Serial.println(response);
-    r = true;
-  } else {
-    Serial.printf("[HTTP] GET JSON failed, error: %s\n", http.errorToString(httpCode).c_str());
-    errorCode(0x2);
-    r = false;
-  }
-  http.end();
-  return r;
-}
-
-bool parseJson(String json)
-{
-  const size_t capacity = JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + 70;
-  DynamicJsonDocument doc(capacity);
-  deserializeJson(doc, json);
-
-  int code = doc["code"];
-  const char *message = doc["message"];
-
-  if (code != 0) {
-    Serial.print("[API]Code:");
-    Serial.print(code);
-    Serial.print(" Message:");
-    Serial.println(message);
-    errorCode(0x3);
-    return false;
-  }
-
-  JsonObject data = doc["data"];
-  unsigned long data_mid = data["mid"];
-  int data_follower = data["follower"];
-  if (data_mid == 0) {
-    Serial.println("[JSON] FORMAT ERROR");
-    errorCode(0x4);
-    return false;
-  }
-  Serial.print("[Http] UID: ");
-  Serial.print(data_mid);
-  Serial.print(" follower: ");
-  Serial.println(data_follower);
-
-  follower = data_follower;
-  return true;
-}
 
 //-----------------------------------------------------------
 //------------------------数码管显示--------------------------
@@ -580,7 +580,7 @@ void displayStock(int stockIndex, int stockRote)
   sendTubeCommand(7, stockIndex/100%10);
   sendTubeCommand(6, stockIndex/10%10);
   sendTubeCommand(5, stockIndex%10);
-  
+
   sendTubeCommand(4, stockRote<0?0xa:0xf);
   if(stockRote<0)stockRote=-stockRote;
   sendTubeCommand(3, stockRote/100 % 10+128);
@@ -594,13 +594,38 @@ void displayDHT11(int temperature, int humidity)
   sendTubeCommand(7, humidity / 10);
   sendTubeCommand(6, humidity % 10);
   sendTubeCommand(5, 0xf);
-  
+
   sendTubeCommand(4, temperature<0?0xa:0xf);
   if(temperature<0)temperature=-temperature;
   sendTubeCommand(3, temperature / 10);
   sendTubeCommand(2, temperature % 10);
   sendTubeCommand(1, 0xf);
 }
+
+void displayBMP280(float pressure, float temperature)
+{
+  int i_pressure=(int)pressure;
+  if(i_pressure>=100000){
+    i_pressure/=100;
+    sendTubeCommand(8,i_pressure/1000);
+    sendTubeCommand(7, i_pressure%1000/100);
+    sendTubeCommand(6,  i_pressure%100/10);
+    sendTubeCommand(5, i_pressure%10);
+  }else{
+    i_pressure/=10;
+    sendTubeCommand(8,i_pressure/1000);
+    sendTubeCommand(7, i_pressure%1000/100);
+    sendTubeCommand(6,  i_pressure%100/10+128);
+    sendTubeCommand(5, i_pressure%10);
+  }
+
+  sendTubeCommand(4, temperature<0?0xa:0xf);
+  if(temperature<0)temperature=-temperature;
+  sendTubeCommand(3,  (int)temperature / 10);
+  sendTubeCommand(2,  (int)temperature % 10+128);
+  sendTubeCommand(1, ((int)(temperature*10))% 10);
+}
+
 
 void displayTest()
 {
@@ -622,8 +647,8 @@ void setupDisplay()
   digitalWrite(pinTube, LOW);
   sendTubeCommand(12, 1);         //Shutdown,open
   sendTubeCommand(15, 0);         //DisplayTest,no
-  sendTubeCommand(10, 8);        //Intensity,15(max)
-  sendTubeCommand(11, scanLimit); //ScanLimit,8-1=7 //8只LED全用
+  sendTubeCommand(10, isSleep ? 0 : 2 );        //Intensity,15(max)
+  sendTubeCommand(11, 7); //ScanLimit,8-1=7 //8只LED全用
   sendTubeCommand(9, 255);        //DecodeMode,Code B decode for digits 7-0 //选用全译码模式, 不译码就是数码管8个发光点对应8个bit
   digitalWrite(pinTube, HIGH);
 }
@@ -670,7 +695,7 @@ void Blink(byte PIN, int DELAY_MS, byte loops)
     digitalWrite(PIN,HIGH);
     delay(DELAY_MS);
     digitalWrite(PIN,LOW);
-    delay(DELAY_MS);  
+    delay(DELAY_MS);
   }
 }
 //-----------------------------------------------------------
@@ -683,7 +708,7 @@ void writeEEP() {
   EEPROM.write(addr, val);
   EEPROM.commit();
   byte value = EEPROM.read(addr);
-  
+
 }
 //#include <SPIFlash.h>
 
@@ -731,7 +756,7 @@ void smartConfig(int timeout)
 
 //AP热点配网库
 boolean autoConfig(int timeout)
-{ 
+{
   Serial.print("[WiFiManager] AP Config net start...");
   sendTubeCommand(8, 1);
   sendTubeCommand(7, 9);
@@ -741,7 +766,7 @@ boolean autoConfig(int timeout)
   sendTubeCommand(3, 8+128);
   sendTubeCommand(2, 4+128);
   sendTubeCommand(1, 1);
-  
+
   WiFiManager wifiManager;
   //wifiManager.resetSettings();
 
@@ -759,4 +784,74 @@ void apConfig(int timeout)
 {
   WiFi.mode(WIFI_STA);
   Serial.print("\nWait for Smartconfig");
+}
+//------------------------BILIBLI-------------------------------
+
+String biliuid = "423895";         //bilibili UID
+String response;
+int follower = 0;
+
+void runBili() {
+  if (getJson()) {
+    if (parseJson(response)) {
+      displayNumber(follower);
+    }
+  }
+}
+
+bool getJson()
+{
+  String api = "http://api.bilibili.com/x/relation/stat?vmid=" + biliuid;
+  //  Serial.println("Request: " + api);
+  bool r = false;
+  http.setTimeout(HTTP_TIMEOUT);
+  http.begin(api);
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    response = http.getString();
+    //    Serial.println(response);
+    r = true;
+  } else {
+    Serial.printf("[HTTP] GET JSON failed, error: %s\n", http.errorToString(httpCode).c_str());
+    errorCode(0x2);
+    r = false;
+  }
+  http.end();
+  return r;
+}
+
+bool parseJson(String json)
+{
+  const size_t capacity = JSON_OBJECT_SIZE(4) + JSON_OBJECT_SIZE(5) + 70;
+  DynamicJsonDocument doc(capacity);
+  deserializeJson(doc, json);
+
+  int code = doc["code"];
+  const char *message = doc["message"];
+
+  if (code != 0) {
+    Serial.print("[API]Code:");
+    Serial.print(code);
+    Serial.print(" Message:");
+    Serial.println(message);
+    errorCode(0x3);
+    return false;
+  }
+
+  JsonObject data = doc["data"];
+  unsigned long data_mid = data["mid"];
+  int data_follower = data["follower"];
+  if (data_mid == 0) {
+    Serial.println("[JSON] FORMAT ERROR");
+    errorCode(0x4);
+    return false;
+  }
+  Serial.print("[Http] UID: ");
+  Serial.print(data_mid);
+  Serial.print(" follower: ");
+  Serial.println(data_follower);
+
+  follower = data_follower;
+  return true;
 }
