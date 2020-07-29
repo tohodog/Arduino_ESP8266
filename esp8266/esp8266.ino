@@ -12,7 +12,7 @@
 #include <WiFiManager.h>   
 
 //设备唯一标识,后台提前入库
-const char* DEVICE_ID = "QS-A002";
+const char* DEVICE_ID = "QS-A001";
 //WIFI信息
 String ssid = "ICBM";          //WiFi名
 String password = "Androids";  //WiFi密码
@@ -26,7 +26,7 @@ String password = "Androids";  //WiFi密码
 //  DIN   --- D7(GPIO13)
 //  CS    --- D4(GPIO2)
 //  CLK   --- D5(GPIO14)
-const int pinTube = D4;
+const int pinTube = D6;
 
 //-------------------------DHT11------------------------------
 //硬件连接说明：
@@ -36,7 +36,7 @@ const int pinTube = D4;
 
 #include <SimpleDHT.h>
 
-const int pinDHT11 = D6;
+const int pinDHT11 = D4;
 SimpleDHT11 dht11(pinDHT11);
 // read without samples.
 byte temperature = 0;
@@ -82,10 +82,12 @@ bool isTrade;
 //-------------------------开关------------------------------
 const int pin0 = D0;
 byte pin0Low = 0;
+const int pin1 = D1;
+byte pin1Low = 0;
+const int pin2 = D2;
+byte pin2Low = 0;
 const int pin3 = D3;
 byte pin3Low = 0;
-const int pin6 = D6;
-byte pin6Low = 0;
 const int pin8 = D8;
 byte pin8Low = 0;
 //-------------------------logic------------------------------
@@ -108,11 +110,10 @@ void setup()
   //init switch
   pinMode(pin0, OUTPUT);
   pin0Low = digitalRead(pin0);
+  pin1Low = digitalRead(pin1);
+  pin2Low = digitalRead(pin2);
   pin3Low = digitalRead(pin3);
-  pin6Low = digitalRead(pin6);
   pin8Low = digitalRead(pin8);
-
-  getBMP280(false);
 
   getDHT11(false);
   connWifi();
@@ -124,15 +125,13 @@ void loop() {
       getTime();
       delayAndHandleTask(1000);
     }
+    getDHT11(false);
     runStock();
     delayAndHandleTask(isTrade?5000:2000);
 
-    if(!isTrade){
-      getBMP280(true);
-      delayAndHandleTask(2000);
-    }else{
-      getBMP280(false);
-    }
+    getDHT11(true);
+    delayAndHandleTask(2000);
+
   } else {
     int i = millis() / 100;
     if (i%10==0)
@@ -348,10 +347,12 @@ void listenTCP() {
       int data = doc["data"];
       int pin = doc["pin"];
 //      if(pin==NULL)pin=0;
-      if (pin==3){
+      if (pin==1){
+        switchPin(pin1, pin1Low=data);
+      }else if (pin==2){
+        switchPin(pin2, pin2Low=data);
+      }else if (pin==3){
         switchPin(pin3, pin3Low=data);
-      }else if (pin==6){
-        switchPin(pin6, pin6Low=data);
       }else if (pin==8){
         switchPin(pin8, pin8Low=data);
       }else{
@@ -372,13 +373,13 @@ bool uploadData(int msg_id) {
   doc["msg_id"] = msg_id;
   doc["type"] = 1;
   doc["pin0"] = pin0Low;
+  doc["pin1"] = pin1Low;
+  doc["pin2"] = pin2Low;
   doc["pin3"] = pin3Low;
-  doc["pin6"] = pin6Low;
   doc["pin8"] = pin8Low;
 
-  doc["temp"] = bmp280_temperature;
-  doc["pressure"] = bmp280_pressure;
-  doc["altitud"] = bmp280_altitude;
+  doc["temp"] = temperature;
+  doc["humi"] = humidity;
   String output;
   serializeJson(doc, output);
   return sendTCP(output);
